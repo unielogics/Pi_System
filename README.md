@@ -62,6 +62,16 @@ already-built image.
    `Could not solve for environment specs` boost/python version cross-talk). Fix: drop the extra
    pin and let `robostack-humble`/`conda-forge` resolve boost's version themselves; don't pin
    `boost` directly.
+
+   `ros-humble-cv-bridge` above pulls in Boost's runtime `.so` transitively, but not its headers
+   or CMake config files — the vendor driver's own `find_package(Boost REQUIRED COMPONENTS system
+   filesystem)` (step 4 below) fails without them (`Could NOT find Boost (missing:
+   Boost_INCLUDE_DIR system filesystem)`, confirmed live). Install as a separate, unpinned step
+   so it can't reopen the boost/`python=3.12` conflict above — this resolves cleanly in seconds
+   since it's purely additive, not a re-pin:
+   ```bash
+   micromamba install -n ros2 -c conda-forge libboost-devel
+   ```
 4. Build the vendor's `deptrum-ros-driver-aurora930` ROS2 package into `~/dimensioner_ws`. The
    vendor SDK (`deptrum-stream-aurora900-linux-aarch64`, a proprietary precompiled `.so` + headers,
    ~40MB) and the ROS2 driver source are Deptrum-licensed — obtained directly from Deptrum

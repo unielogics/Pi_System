@@ -55,9 +55,9 @@ MICROMAMBA="${MICROMAMBA_ROOT}/bin/micromamba"
 
 if ! "${MICROMAMBA}" env list 2>/dev/null | grep -q '/envs/ros2$'; then
   log "Creating the ros2 micromamba environment (this takes a while)..."
-  # Deliberately no extra pins beyond python=3.12 -- adding a bare boost=X here has previously
-  # made ros-humble-cv-bridge/boost/python=3.12 mutually unsatisfiable (see README.md Section 1
-  # step 3's documented gotcha). Let robostack-humble/conda-forge resolve boost's version themselves.
+  # Deliberately no bare boost=X pin in this first pass -- adding one here has previously made
+  # ros-humble-cv-bridge/boost/python=3.12 mutually unsatisfiable (see README.md Section 1 step 3's
+  # documented gotcha). Let robostack-humble/conda-forge resolve boost's version themselves.
   "${MICROMAMBA}" create -y -n ros2 -c robostack-humble -c conda-forge \
     python=3.12 \
     ros-humble-ros-base ros-humble-cv-bridge ros-humble-image-transport ros-humble-angles \
@@ -65,6 +65,17 @@ if ! "${MICROMAMBA}" env list 2>/dev/null | grep -q '/envs/ros2$'; then
     fastapi uvicorn python-multipart pillow
 else
   log "ros2 environment already exists -- skipping."
+fi
+
+# ros-humble-cv-bridge pulls in Boost's runtime .so transitively, but not its headers/CMake
+# config files -- the vendor driver's subscribe_node/CMakeLists.txt does its own
+# find_package(Boost REQUIRED COMPONENTS system filesystem), which fails without them (confirmed
+# live: "Could NOT find Boost (missing: Boost_INCLUDE_DIR system filesystem)"). Installed as a
+# separate, unpinned step so it can't reopen the boost/python=3.12 resolver conflict above --
+# confirmed live this resolves cleanly in seconds since it's purely additive, not a re-pin.
+if [ -z "$(find "${MICROMAMBA_ROOT}/envs/ros2/lib/cmake" -maxdepth 2 -iname 'BoostConfig.cmake' 2>/dev/null)" ]; then
+  log "Installing Boost headers/CMake config (libboost-devel)..."
+  "${MICROMAMBA}" install -y -n ros2 -c conda-forge libboost-devel
 fi
 
 # ── Step 2: this repo ───────────────────────────────────────────────────────────────────────────
