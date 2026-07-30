@@ -38,14 +38,17 @@ already-built image.
    vendor-specific tribal knowledge with no written instructions anywhere** — whoever builds the
    next golden image should capture the exact commands they run here and fold them into this
    section, closing that gap permanently.
-5. Copy this repo's `dimensioner/` directory to `/home/franco/dimensioner`.
-6. Install the systemd unit files and enable the always-on services, including the network
-   watchdog (which needs no warehouse identity, unlike the heartbeat timer — that one's still
-   deferred to Section 2, since it depends on identity that doesn't exist yet):
+5. Clone this repo to `/home/franco/dimensioner` (public repo, no credentials needed):
    ```bash
-   sudo install -m 0644 dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.service dimensioner-network-watchdog.timer /etc/systemd/system/
+   git clone https://github.com/unielogics/Pi_System.git /home/franco/dimensioner
+   ```
+6. Install the systemd unit files and enable the always-on services, including the network
+   watchdog and the auto-updater (neither needs warehouse identity, unlike the heartbeat timer —
+   that one's still deferred to Section 2, since it depends on identity that doesn't exist yet):
+   ```bash
+   sudo install -m 0644 dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.service dimensioner-network-watchdog.timer dimensioner-auto-update.service dimensioner-auto-update.timer /etc/systemd/system/
    sudo systemctl daemon-reload
-   sudo systemctl enable dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.timer
+   sudo systemctl enable dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.timer dimensioner-auto-update.timer
    ```
 6a. Install the sudoers rule both watchdogs depend on (see "Self-healing," below, for what each
     one restarts/reconnects) — without this, both watchdogs' recovery actions silently fail:
@@ -153,12 +156,39 @@ without human intervention:
 - **Network loss** — `network_watchdog.py`, run every 2 minutes by
   `dimensioner-network-watchdog.timer`. Pings the default gateway (a real reachability probe, not
   `registration.py`'s `_lan_ip()`, which only detects a fully-missing route, not a dead
-  gateway/internet). After 2 consecutive failed checks, forces a WiFi reconnect via `nmcli`.
+  gateway/internet). After 2 consecutive failed checks, forces a reconnect on whichever interface
+  (wired or WiFi) carries the default route, via `nmcli`.
 
 Both call `sudo -n ...` as `franco`, which requires the `franco-dimensioner-sudoers` rule
 installed in Section 1, step 6a — a fresh golden image built without that step will have both
 watchdogs detect the problem but silently fail to act on it (check `journalctl` for
 `sudo -n: a password is required` if a device's cameras/network never seem to self-recover).
+
+## Auto-update
+
+`auto_update.py`, run every 30 minutes by `dimensioner-auto-update.timer`, keeps every device on
+the latest commit of this repo with zero manual SSH sessions:
+
+1. `git fetch origin` + compares local `HEAD` against `origin/main`. No new commits → exits
+   immediately, no-op.
+2. New commit(s) → `git pull --ff-only` (never a merge/rebase). If the device's local tree has
+   ever been hand-edited during a debugging session, this fails loudly instead of silently
+   discarding or merging over that in-progress edit — leave a failed pull for a human to resolve.
+3. If `requirements.txt` changed, reinstalls dependencies inside the `ros2` env. If any
+   `.service`/`.timer` file changed, reinstalls it into `/etc/systemd/system/` and
+   `daemon-reload`s.
+4. Restarts `dimensioner-api.service`/`dimensioner-ros.service` unconditionally after any
+   successful pull, and logs the before/after SHA + a one-line change summary to `journalctl`.
+
+`unielogics/Pi_System` is a **public** GitHub repo, so no credentials are needed anywhere in this
+loop — if it's ever made private, this whole mechanism needs a read-only deploy key added first.
+There is currently no rollback mechanism (a bad commit on `main` reaches every device on its next
+tick) and no fleet-wide "which devices are out of date" view — both acceptable gaps at the
+current fleet size, revisit if the fleet grows.
+
+Each device reports the short commit SHA it's running on with every self-registration/heartbeat
+call (`registration.py`'s `_git_sha()`) — visible read-only in the dashboard's Sensors and Cameras
+device table, next to the Self-registered/Manual badge.
 
 ## What's fixed vs. what varies per device
 
