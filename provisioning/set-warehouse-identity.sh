@@ -25,6 +25,11 @@ ENV_FILE="${DIMENSIONER_HOME}/.env"
 
 touch "${ENV_FILE}"
 chmod 600 "${ENV_FILE}"
+# This script runs under sudo, so the file is created root:root by default -- but every reader
+# of it (dimensioner-*.service's User=unie, and the one-off `source .env` calls this script and
+# setup-golden-image.sh make outside systemd) runs as `unie`, not root. Confirmed live: `unie`
+# got a plain permission-denied trying to source a root-owned 600 file.
+chown unie:unie "${ENV_FILE}"
 
 # Strip any previous identity lines, then append the current ones -- idempotent re-run if a
 # device ever needs to be re-pointed at a different warehouse/zone.
