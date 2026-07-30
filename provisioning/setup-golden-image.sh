@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Runs ON a bare-flashed Pi (Raspberry Pi OS/Debian, user `unie`, SSH enabled, on the target
+# warehouse's network) to build a fully working dimensioner device in one command, collapsing
+# README.md's Section 1 (build the golden image) + Section 2 (deploy to a warehouse) manual
+# checklist into a single script. Only step this can't do: flashing the SD card itself (a
+# physical action that has to happen before this script can even run over SSH) and plugging the
+# camera into a USB 3.0 port (also physical).
+#
+# Usage (run as `unie`, NOT via sudo -- the script escalates internally, line by line, only for
+# the specific systemd/sudoers/install operations that need it, same as
+# set-warehouse-identity.sh/provision-pi.sh already do):
+#   ./setup-golden-image.sh <warehouse-code> <zone-code> <provisioning-secret>
+#   e.g. ./setup-golden-image.sh wh-007 ed3 dps_<secret from the dashboard's Add Device flow>
+#
+# Safe to re-run: every step below is the same idempotent operation the manual checklist already
+# used (micromamba create -n ros2 no-ops if the env exists; git clone is skipped if the directory
+# is already a clone; set-warehouse-identity.sh/provision-pi.sh are both already idempotent).
+set -euo pipefail
+
+WAREHOUSE_CODE="${1:?Usage: setup-golden-image.sh <warehouse-code> <zone-code> <provisioning-secret>}"
+ZONE_CODE="${2:?Usage: setup-golden-image.sh <warehouse-code> <zone-code> <provisioning-secret>}"
+PROVISIONING_SECRET="${3:?Usage: setup-golden-image.sh <warehouse-code> <zone-code> <provisioning-secret>}"
+
+DIMENSIONER_HOME="/home/unie/dimensioner"
+WORKSPACE="/home/unie/dimensioner_ws"
+MICROMAMBA_ROOT="/home/unie/micromamba"
+
+log() { echo ">>> $*"; }
+
+if [ "$(whoami)" != "unie" ]; then
+  echo "This script must run as the 'unie' user (every systemd unit/path in this repo hardcodes it)." >&2
+  exit 1
+fi
+if [ "$(uname -m)" != "aarch64" ]; then
+  echo "Expected a 64-bit (aarch64) OS -- got $(uname -m)." >&2
+  exit 1
+fi
+
+# ── Step 1: micromamba + ros2 environment ──────────────────────────────────────────────────────
+if [ ! -x "${MICROMAMBA_ROOT}/bin/micromamba" ]; then
+  log "Installing micromamba..."
+  "${SHELL}" <(curl -L micro.mamba.pm/install.sh) < /dev/null
+fi
+MICROMAMBA="${MICROMAMBA_ROOT}/bin/micromamba"
+
+if ! "${MICROMAMBA}" env list 2>/dev/null | grep -q '/envs/ros2$'; then
+  log "Creating the ros2 micromamba environment (this takes a while)..."
+  # Deliberately no extra pins beyond python=3.12 -- adding a bare boost=X here has previously
+  # made ros-humble-cv-bridge/boost/python=3.12 mutually unsatisfiable (see README.md Section 1
+  # step 3's documented gotcha). Let robostack-humble/conda-forge resolve boost's version themselves.
+  "${MICROMAMBA}" create -y -n ros2 -c robostack-humble -c conda-forge \
+    python=3.12 \
+    ros-humble-ros-base ros-humble-cv-bridge ros-humble-image-transport ros-humble-angles \
+    colcon-common-extensions \
+    fastapi uvicorn python-multipart pillow
+else
+  log "ros2 environment already exists -- skipping."
+fi
+
+# ── Step 2: this repo ───────────────────────────────────────────────────────────────────────────
+if [ ! -d "${DIMENSIONER_HOME}/.git" ]; then
+  log "Cloning Pi_System..."
+  git clone https://github.com/unielogics/Pi_System.git "${DIMENSIONER_HOME}"
+else
+  log "Pi_System already cloned -- skipping (run auto_update.py to update)."
+fi
+cd "${DIMENSIONER_HOME}"
+
+# ── Step 3: self-register early so later steps can authenticate as this device ─────────────────
+# set-warehouse-identity.sh writes .env, restarts the API, installs the heartbeat timer, and
+# fires one immediate self-registration call -- run it now (not at the very end) so steps 4-5
+# below can use registration.py's own device token instead of needing the raw warehouse secret
+# passed around in shell state for the whole rest of this script.
+log "Registering with the WMS backend..."
+sudo ./provisioning/set-warehouse-identity.sh "${WAREHOUSE_CODE}" "${ZONE_CODE}" "${PROVISIONING_SECRET}"
+
+# ── Step 4: vendor camera driver (licensed -- fetched via the backend's presigned S3 URL) ──────
+if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
+  log "Fetching the vendor camera driver tarball..."
+  DOWNLOAD_JSON="$("${MICROMAMBA}" run -n ros2 python registration.py --vendor-driver-download-url)"
+  if echo "${DOWNLOAD_JSON}" | grep -q '"error"'; then
+    echo "Failed to fetch the vendor driver download URL: ${DOWNLOAD_JSON}" >&2
+    exit 1
+  fi
+  DOWNLOAD_URL="$(echo "${DOWNLOAD_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')"
+
+  mkdir -p "${WORKSPACE}/src"
+  curl -sL -o /tmp/deptrum-driver.tar.gz "${DOWNLOAD_URL}"
+  tar -xzf /tmp/deptrum-driver.tar.gz -C "${WORKSPACE}/src"
+  rm -f /tmp/deptrum-driver.tar.gz
+  # The extracted tarball's top-level dir is named deptrum-ros-driver-aurora930-<version> --
+  # rename to the plain package name every downstream step (this script, README.md, CMake) expects.
+  EXTRACTED_DIR="$(find "${WORKSPACE}/src" -maxdepth 1 -type d -name 'deptrum-ros-driver-aurora930*' | head -1)"
+  if [ -n "${EXTRACTED_DIR}" ] && [ "${EXTRACTED_DIR}" != "${WORKSPACE}/src/deptrum-ros-driver-aurora930" ]; then
+    mv "${EXTRACTED_DIR}" "${WORKSPACE}/src/deptrum-ros-driver-aurora930"
+  fi
+  sed -i 's/deptrum-ros-driver\b/deptrum-ros-driver-aurora930/g' "${WORKSPACE}/src/deptrum-ros-driver-aurora930/package.xml"
+
+  log "Building the vendor driver (STREAM_SDK_TYPE=AURORA930)..."
+  cd "${WORKSPACE}"
+  "${MICROMAMBA}" run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930
+  cd "${DIMENSIONER_HOME}"
+
+  log "Installing camera udev rules (non-root USB access)..."
+  UDEV_SCRIPTS_DIR="$(find "${WORKSPACE}/src/deptrum-ros-driver-aurora930/ext" -maxdepth 1 -type d -name 'deptrum-stream-aurora900-*')/scripts"
+  sudo cp "${UDEV_SCRIPTS_DIR}/99-deptrum-libusb.rules" /etc/udev/rules.d/
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger
+else
+  log "Vendor driver already built -- skipping."
+fi
+
+# ── Step 5: systemd units + sudoers ─────────────────────────────────────────────────────────────
+log "Installing systemd units and the sudoers rule..."
+sudo install -m 0644 dimensioner-api.service dimensioner-ros.service \
+  dimensioner-network-watchdog.service dimensioner-network-watchdog.timer \
+  dimensioner-auto-update.service dimensioner-auto-update.timer \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable dimensioner-api.service dimensioner-ros.service \
+  dimensioner-network-watchdog.timer dimensioner-auto-update.timer
+sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner
+sudo visudo -c
+
+# ── Step 6: Caddy binary ────────────────────────────────────────────────────────────────────────
+if [ ! -f /home/unie/caddy ]; then
+  log "Downloading the Caddy binary (with the Route53 DNS-01 plugin)..."
+  curl -sL -o /home/unie/caddy \
+    "https://caddyserver.com/api/download?os=linux&arch=arm64&p=github.com%2Fcaddy-dns%2Froute53"
+  chmod +x /home/unie/caddy
+else
+  log "Caddy binary already present -- skipping."
+fi
+
+# ── Step 7: restart the capture API/ROS driver now that the real driver is built ──────────────
+sudo systemctl restart dimensioner-ros.service dimensioner-api.service
+sleep 5
+
+# ── Step 8: HTTPS via Caddy + Route53 DNS-01 (fetches its own short-lived creds automatically) ─
+log "Provisioning HTTPS (Caddy + Route53 DNS-01)..."
+sudo ./provisioning/provision-pi.sh
+
+log "Done. Check the dashboard's Sensors and Cameras page -- this device should appear tagged"
+log "\"Self-registered\" within a few seconds. Physically mount/aim the camera (USB 3.0 blue port"
+log "if at all possible), then use Sensors and Cameras -> Calibrate to run initial calibration."

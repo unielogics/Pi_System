@@ -10,6 +10,19 @@ This document covers two things: building a reusable base image once, and the ex
 that image into a working device at a specific warehouse. No new tooling is required — every
 script referenced here already exists in this directory.
 
+## Fastest path: one command
+
+For a fresh Pi (SD card flashed with Raspberry Pi Imager, username `unie`, SSH enabled, on the
+target warehouse's network -- see step 1 below), `provisioning/setup-golden-image.sh` collapses
+everything else in Sections 1-2 into a single command:
+```bash
+./setup-golden-image.sh <warehouse-code> <zone-code> <provisioning-secret>
+# e.g. ./setup-golden-image.sh wh-007 ed3 dps_<secret from the dashboard's Add Device flow>
+```
+Run as `unie` (not via `sudo` — the script escalates internally only where it actually needs to).
+Safe to re-run if it fails partway (every step is idempotent). Reads the rest of this document
+for exactly what it's doing under the hood, in case a step needs manual troubleshooting.
+
 ## Section 1 — Build the golden image
 
 Do this once, and again only when the base software genuinely needs to change (a dependency bump,

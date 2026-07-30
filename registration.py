@@ -183,11 +183,46 @@ def fetch_route53_credentials() -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def fetch_vendor_driver_download_url() -> dict:
+    """Calls POST /dimensioners/vendor-driver-download-url -- a short-lived (10min) presigned S3
+    URL for the licensed Deptrum camera driver tarball, used once during initial golden-image
+    setup (see provisioning/setup-golden-image.sh). Same auth precondition as
+    fetch_route53_credentials(): requires self-registration to have already happened."""
+    if not WAREHOUSE_CODE or not ZONE_CODE:
+        raise RuntimeError(
+            "DIMENSIONER_WAREHOUSE_CODE/DIMENSIONER_ZONE_CODE not set -- run "
+            "provisioning/set-warehouse-identity.sh first."
+        )
+
+    state = load_registration_state()
+    credential = state.auth_token or PROVISIONING_SECRET
+    if not credential:
+        raise RuntimeError(
+            "No device token yet -- run set-warehouse-identity.sh (which self-registers) "
+            "before requesting the vendor driver download URL."
+        )
+
+    body = {"warehouseCode": WAREHOUSE_CODE, "zoneCode": ZONE_CODE, "deviceId": load_device_config().device_id}
+    request = urllib.request.Request(
+        f"{WMS_BACKEND_URL}/dimensioners/vendor-driver-download-url",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {credential}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SEC) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 if __name__ == "__main__":
     import sys
 
     if "--route53-credentials" in sys.argv:
         print(json.dumps(fetch_route53_credentials()))
+    elif "--vendor-driver-download-url" in sys.argv:
+        print(json.dumps(fetch_vendor_driver_download_url()))
     else:
         force_rotate = "--force-rotate-token" in sys.argv
         outcome = register_or_heartbeat(force_rotate_token=force_rotate)
