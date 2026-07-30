@@ -1,7 +1,7 @@
 [Unit]
 Description=Dimensioner self-update (git pull from unielogics/Pi_System, restarts app on new commit)
-After=network-online.target
-Wants=network-online.target
+After=network-online.target systemd-time-wait-sync.service
+Wants=network-online.target systemd-time-wait-sync.service
 
 [Service]
 Type=oneshot

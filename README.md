@@ -110,8 +110,15 @@ already-built image.
    ```bash
    sudo install -m 0644 dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.service dimensioner-network-watchdog.timer dimensioner-auto-update.service dimensioner-auto-update.timer /etc/systemd/system/
    sudo systemctl daemon-reload
+   sudo systemctl enable systemd-time-wait-sync.service
    sudo systemctl enable dimensioner-api.service dimensioner-ros.service dimensioner-network-watchdog.timer dimensioner-auto-update.timer
    ```
+   `systemd-time-wait-sync.service` ships with Raspberry Pi OS but is disabled by default — a Pi 4
+   has no battery-backed RTC, so its clock starts wrong on every boot until NTP catches up. This
+   matters specifically for the "build/test here, ship to the warehouse later" workflow: every
+   unit above that makes an authenticated HTTPS call (the API, the heartbeat, the auto-updater,
+   Caddy's own ACME/DNS-01 step) already declares `After=`/`Wants=systemd-time-wait-sync.service`
+   in its unit file, but that dependency does nothing unless this unit is actually enabled.
 6a. Install the sudoers rule both watchdogs depend on (see "Self-healing," below, for what each
     one restarts/reconnects) — without this, both watchdogs' recovery actions silently fail:
    ```bash
@@ -205,6 +212,15 @@ DNS cache — not the domain, not the router — is the first thing to suspect i
 can't load it while others on the same network can. The backend's heartbeat (every 5 minutes,
 `dimensioner-heartbeat.timer`) keeps the DNS record in sync automatically whenever the Pi's LAN IP
 changes (e.g. after a DHCP lease renewal); no manual DNS action is ever needed.
+
+Moving a device to a different network entirely — built/tested on one, shipped and deployed on
+another — already works correctly with zero manual steps: `registration.py` re-detects the Pi's
+current LAN IP fresh on every call (never cached), and `dimensioner-heartbeat.timer` fires
+~30-90s after every boot, so a moved device reports its new IP and updates DNS quickly on
+power-up. The one real gap this required a fix for: a Pi 4 has no battery-backed clock, so after
+being powered off for shipping its clock starts wrong until NTP catches up — and a wrong clock
+can break TLS/certificate validation. Every unit that makes an authenticated HTTPS call now waits
+on `systemd-time-wait-sync.service` before starting (Section 1, step 6).
 
 ## Self-healing
 

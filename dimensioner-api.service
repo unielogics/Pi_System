@@ -1,7 +1,7 @@
 [Unit]
 Description=Dimensioner capture API (FastAPI, camera-agnostic core)
-After=network.target dimensioner-ros.service
-Wants=dimensioner-ros.service
+After=network.target dimensioner-ros.service systemd-time-wait-sync.service
+Wants=dimensioner-ros.service systemd-time-wait-sync.service
 
 [Service]
 Type=simple

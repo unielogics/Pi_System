@@ -1,7 +1,7 @@
 [Unit]
 Description=Dimensioner device self-registration heartbeat (calls WMS backend, updates DNS on IP change)
-After=network-online.target
-Wants=network-online.target
+After=network-online.target systemd-time-wait-sync.service
+Wants=network-online.target systemd-time-wait-sync.service
 
 [Service]
 Type=oneshot

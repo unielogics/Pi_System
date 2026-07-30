@@ -100,6 +100,13 @@ sudo install -m 0644 dimensioner-api.service dimensioner-ros.service \
   dimensioner-auto-update.service dimensioner-auto-update.timer \
   /etc/systemd/system/
 sudo systemctl daemon-reload
+# systemd-time-wait-sync.service ships with Raspberry Pi OS but is disabled by default -- a Pi 4
+# has no battery-backed RTC, so its clock starts wrong on every boot until NTP catches up, which
+# risks a bad TLS/ACME/authenticated-HTTPS outcome if dimensioner-api/caddy/heartbeat/auto-update
+# race ahead of it (confirmed via a live check: this was previously disabled on the already-live
+# WH-007 ED3 Pi). Every unit that depends on it declares that dependency itself (After=/Wants=);
+# this just flips the unit on so those dependencies actually resolve to something running.
+sudo systemctl enable systemd-time-wait-sync.service
 sudo systemctl enable dimensioner-api.service dimensioner-ros.service \
   dimensioner-network-watchdog.timer dimensioner-auto-update.timer
 sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner

@@ -80,7 +80,13 @@ echo "Auto-update section for the known gap here -- no automatic refresh exists 
 cat > /etc/systemd/system/caddy.service <<'EOF'
 [Unit]
 Description=Caddy (HTTPS reverse proxy for the dimensioner capture API)
-After=network.target
+# systemd-time-wait-sync.service: a Pi 4 has no battery-backed RTC, so after being powered off
+# for shipping (built/tested on one network, deployed at a different warehouse later) its clock
+# starts wrong on every boot until NTP catches up -- and this is the ACME/DNS-01 certificate
+# issuance step, which is exactly the piece most sensitive to a bad clock. Confirmed live this
+# was previously ungated (this unit only waited on network.target).
+After=network.target systemd-time-wait-sync.service
+Wants=systemd-time-wait-sync.service
 
 [Service]
 Type=simple
