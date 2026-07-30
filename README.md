@@ -75,12 +75,16 @@ already-built image.
    # Place the vendor SDK (deptrum-stream-aurora900-linux-aarch64-vX.X.X-...) under
    # deptrum-ros-driver-aurora930/ext/ -- the package's CMakeLists.txt expects it there.
    cd ~/dimensioner_ws
-   micromamba run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930
+   micromamba run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
    ```
    `STREAM_SDK_TYPE=AURORA930` is the load-bearing flag — the same source tree also builds
    STELLAR400/STELLAR420/NEBULA variants depending on this value; get it wrong and the driver
-   builds against the wrong camera's SDK. Also run the vendor SDK's udev setup once per golden
-   image (grants non-root USB access to the camera — `idVendor=3251`):
+   builds against the wrong camera's SDK. `CMAKE_POLICY_VERSION_MINIMUM=3.5` is required on
+   today's `robostack-humble`/`conda-forge` toolchain (CMake 4.x) — the vendor's `CMakeLists.txt`
+   declares `cmake_minimum_required(VERSION 3.5)`, which CMake 4 refuses to configure at all
+   without this override (confirmed live on a fresh build; the original golden Pi predates this
+   and was built against an older CMake that didn't need it). Also run the vendor SDK's udev
+   setup once per golden image (grants non-root USB access to the camera — `idVendor=3251`):
    ```bash
    cd ~/dimensioner_ws/src/deptrum-ros-driver-aurora930/ext/deptrum-stream-aurora900-*/scripts
    sudo cp 99-deptrum-libusb.rules /etc/udev/rules.d/

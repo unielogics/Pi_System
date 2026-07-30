@@ -133,7 +133,12 @@ if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
 
   log "Building the vendor driver (STREAM_SDK_TYPE=AURORA930)..."
   cd "${WORKSPACE}"
-  "${MICROMAMBA}" run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930
+  # -DCMAKE_POLICY_VERSION_MINIMUM=3.5: the vendor's CMakeLists.txt files declare
+  # cmake_minimum_required(VERSION 3.5), but CMake 4.x (what today's robostack-humble/conda-forge
+  # channel installs, confirmed live -- the original golden Pi was built against an older CMake)
+  # dropped support for policies below 3.5/3.10 entirely and refuses to configure at all without
+  # this override. Confirmed via the exact fix CMake's own error message suggests.
+  "${MICROMAMBA}" run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
   cd "${DIMENSIONER_HOME}"
 
   log "Installing camera udev rules (non-root USB access)..."
