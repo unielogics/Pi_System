@@ -17,7 +17,20 @@
 # right interface automatically from the routing table -- this file just needs to permit
 # whichever ones actually exist in the fleet).
 franco ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-ros.service
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-api.service
 franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect eth0
 franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect eth0
 franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect wlan0
 franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect wlan0
+
+# auto_update.py (dimensioner-auto-update.timer, every 30 min) needs to reapply a changed unit
+# file's installation steps the same way a human would per README.md -- reload systemd's view of
+# unit files, re-enable one that changed, and copy the updated file from the repo into
+# /etc/systemd/system/. The `cp` glob is a sudoers pathname pattern (fnmatch), not a shell glob --
+# it only matches files directly inside /home/franco/dimensioner/, so a compromised git history
+# still can't use this rule to overwrite an arbitrary system path.
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.service
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.timer
+franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.service /etc/systemd/system/
+franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.timer /etc/systemd/system/

@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic dimensioner self-update check
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=120
+Unit=dimensioner-auto-update.service
+
+[Install]
+WantedBy=timers.target

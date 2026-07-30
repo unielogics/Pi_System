@@ -1,0 +1,11 @@
+[Unit]
+Description=Dimensioner self-update (git pull from unielogics/Pi_System, restarts app on new commit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=franco
+WorkingDirectory=/home/franco/dimensioner
+EnvironmentFile=-/home/franco/dimensioner/.env
+ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 python auto_update.py
