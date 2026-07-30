@@ -157,6 +157,13 @@ _last_restart_at: float = 0.0
 _process_started_at: float = time.monotonic()
 _last_bbox_overlay: dict | None = None  # set by /capture, drawn on the next /stream/rgb frame
 
+# Debounces /update-now: a redundant `systemctl start` on an already-running oneshot unit is a
+# safe no-op, but without this a bulk "Update Now" click across many devices (or a retry) would
+# silently do nothing differently on a second click -- this cooldown gives the dashboard a clear
+# "already_triggered" response to show instead of ambiguous silence.
+UPDATE_TRIGGER_COOLDOWN_SEC = 60.0
+_last_update_triggered_at: float = 0.0
+
 
 def _check_auth(authorization: str | None, token_param: str | None = None) -> None:
     registered_token = _registered_auth_token()
@@ -954,6 +961,32 @@ def stream_depth(
     return StreamingResponse(
         _mjpeg_stream(get_frame, is_stale), media_type="multipart/x-mixed-replace; boundary=dimensionerframe"
     )
+
+
+@app.post("/update-now")
+def update_now(authorization: str | None = Header(default=None)):
+    """Fire-and-forget on-demand update trigger for the dashboard's "Update Now" button.
+    Deliberately does NOT run auto_update.py in-process -- a successful update restarts
+    dimensioner-api.service (the very process serving this request) partway through, which
+    would kill the request handler mid-response. `systemctl start` on the auto-update oneshot
+    unit is safe to call even if one's already running (systemd no-ops it), so a double-click
+    or bulk retry from the dashboard is harmless -- the cooldown below just gives a clearer
+    response than silence in that case."""
+    _check_auth(authorization)
+    global _last_update_triggered_at
+    now = time.monotonic()
+    elapsed = now - _last_update_triggered_at
+    if elapsed < UPDATE_TRIGGER_COOLDOWN_SEC:
+        return {
+            "status": "already_triggered",
+            "cooldownRemainingSec": round(UPDATE_TRIGGER_COOLDOWN_SEC - elapsed, 1),
+        }
+    _last_update_triggered_at = now
+    subprocess.run(
+        ["sudo", "-n", "systemctl", "start", "dimensioner-auto-update.service"],
+        capture_output=True,
+    )
+    return {"status": "triggered"}
 
 
 @app.post("/calibrate")

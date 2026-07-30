@@ -168,8 +168,9 @@ watchdogs detect the problem but silently fail to act on it (check `journalctl` 
 
 ## Auto-update
 
-`auto_update.py`, run every 30 minutes by `dimensioner-auto-update.timer`, keeps every device on
-the latest commit of this repo with zero manual SSH sessions:
+`auto_update.py`, run once nightly (03:00 local, ±30min jitter across the fleet) by
+`dimensioner-auto-update.timer`, keeps every device on the latest commit of this repo with zero
+manual SSH sessions:
 
 1. `git fetch origin` + compares local `HEAD` against `origin/main`. No new commits → exits
    immediately, no-op.
@@ -185,12 +186,21 @@ the latest commit of this repo with zero manual SSH sessions:
 `unielogics/Pi_System` is a **public** GitHub repo, so no credentials are needed anywhere in this
 loop — if it's ever made private, this whole mechanism needs a read-only deploy key added first.
 There is currently no rollback mechanism (a bad commit on `main` reaches every device on its next
-tick) and no fleet-wide "which devices are out of date" view — both acceptable gaps at the
-current fleet size, revisit if the fleet grows.
+tick) — an accepted gap at the current fleet size, revisit if the fleet grows.
+
+**On-demand updates**: `POST /update-now` (bearer-auth, same as every other endpoint) fires the
+same `dimensioner-auto-update.service` unit immediately instead of waiting for the nightly run —
+fire-and-forget, since a successful update restarts `dimensioner-api.service` itself partway
+through (running `auto_update.py` in-process would kill the request handler mid-response). A
+60-second cooldown returns `{"status": "already_triggered", ...}` on a redundant call instead of
+silently no-oping. The dashboard's Sensors and Cameras device table calls this directly from the
+browser (same direct-to-Pi pattern the live camera viewer uses), including a bulk "Update Now"
+action across multiple selected devices at once.
 
 Each device reports the short commit SHA it's running on with every self-registration/heartbeat
-call (`registration.py`'s `_git_sha()`) — visible read-only in the dashboard's Sensors and Cameras
-device table, next to the Self-registered/Manual badge.
+call (`registration.py`'s `_git_sha()`) — visible in the dashboard's Sensors and Cameras device
+table next to the Self-registered/Manual badge, flagged "(outdated)" if it doesn't match the
+latest commit on `Pi_System`'s `main` branch.
 
 ## Route53 credentials
 

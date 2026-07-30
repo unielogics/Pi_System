@@ -34,3 +34,10 @@ franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.service
 franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.timer
 franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.service /etc/systemd/system/
 franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.timer /etc/systemd/system/
+
+# The on-demand "Update Now" dashboard button (POST /update-now in api.py) needs to start the
+# auto-update oneshot unit outside its normal overnight schedule, without auto_update.py running
+# in-process (which would restart THIS process, api.py, mid-request -- see /update-now's
+# docstring). `start` (not `restart`) is correct: the unit is Type=oneshot and normally inactive
+# between runs, so `start` is what actually invokes it on demand.
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl start dimensioner-auto-update.service
