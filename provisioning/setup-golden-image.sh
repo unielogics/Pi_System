@@ -103,33 +103,46 @@ log "Registering with the WMS backend..."
 sudo ./provisioning/set-warehouse-identity.sh "${WAREHOUSE_CODE}" "${ZONE_CODE}" "${PROVISIONING_SECRET}"
 
 # ── Step 5: vendor camera driver (licensed -- fetched via the backend's presigned S3 URL) ──────
-if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
-  log "Fetching the vendor camera driver tarball..."
-  # registration.py reads DIMENSIONER_WAREHOUSE_CODE/ZONE_CODE from os.environ -- a plain
-  # `source .env` only sets shell-local variables, it does NOT export them to this child process
-  # (same gap already fixed in set-warehouse-identity.sh/provision-pi.sh).
-  set -a
-  # shellcheck disable=SC1091
-  source "${DIMENSIONER_HOME}/.env"
-  set +a
-  DOWNLOAD_JSON="$("${MICROMAMBA}" run -n ros2 python registration.py --vendor-driver-download-url)"
-  if echo "${DOWNLOAD_JSON}" | grep -q '"error"'; then
-    echo "Failed to fetch the vendor driver download URL: ${DOWNLOAD_JSON}" >&2
-    exit 1
-  fi
-  DOWNLOAD_URL="$(echo "${DOWNLOAD_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')"
+# Deliberately checks the compiled driver lib dir, NOT install/setup.bash -- colcon writes that
+# workspace-level setup script even when the actual package build fails (confirmed live: a run
+# that hit a CMake configure error still left install/setup.bash in place, which made this guard
+# skip a real re-build on the next attempt instead of retrying).
+if [ ! -d "${WORKSPACE}/install/deptrum-ros-driver-aurora930/lib" ] || [ -z "$(ls -A "${WORKSPACE}/install/deptrum-ros-driver-aurora930/lib" 2>/dev/null)" ]; then
+  if [ ! -d "${WORKSPACE}/src/deptrum-ros-driver-aurora930" ]; then
+    log "Fetching the vendor camera driver tarball..."
+    # registration.py reads DIMENSIONER_WAREHOUSE_CODE/ZONE_CODE from os.environ -- a plain
+    # `source .env` only sets shell-local variables, it does NOT export them to this child
+    # process (same gap already fixed in set-warehouse-identity.sh/provision-pi.sh).
+    set -a
+    # shellcheck disable=SC1091
+    source "${DIMENSIONER_HOME}/.env"
+    set +a
+    DOWNLOAD_JSON="$("${MICROMAMBA}" run -n ros2 python registration.py --vendor-driver-download-url)"
+    if echo "${DOWNLOAD_JSON}" | grep -q '"error"'; then
+      echo "Failed to fetch the vendor driver download URL: ${DOWNLOAD_JSON}" >&2
+      exit 1
+    fi
+    DOWNLOAD_URL="$(echo "${DOWNLOAD_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')"
 
-  mkdir -p "${WORKSPACE}/src"
-  curl -sL -o /tmp/deptrum-driver.tar.gz "${DOWNLOAD_URL}"
-  tar -xzf /tmp/deptrum-driver.tar.gz -C "${WORKSPACE}/src"
-  rm -f /tmp/deptrum-driver.tar.gz
-  # The extracted tarball's top-level dir is named deptrum-ros-driver-aurora930-<version> --
-  # rename to the plain package name every downstream step (this script, README.md, CMake) expects.
-  EXTRACTED_DIR="$(find "${WORKSPACE}/src" -maxdepth 1 -type d -name 'deptrum-ros-driver-aurora930*' | head -1)"
-  if [ -n "${EXTRACTED_DIR}" ] && [ "${EXTRACTED_DIR}" != "${WORKSPACE}/src/deptrum-ros-driver-aurora930" ]; then
-    mv "${EXTRACTED_DIR}" "${WORKSPACE}/src/deptrum-ros-driver-aurora930"
+    mkdir -p "${WORKSPACE}/src"
+    curl -sL -o /tmp/deptrum-driver.tar.gz "${DOWNLOAD_URL}"
+    tar -xzf /tmp/deptrum-driver.tar.gz -C "${WORKSPACE}/src"
+    rm -f /tmp/deptrum-driver.tar.gz
+    # The extracted tarball's top-level dir is named deptrum-ros-driver-aurora930-<version> --
+    # rename to the plain package name every downstream step (this script, README.md, CMake) expects.
+    EXTRACTED_DIR="$(find "${WORKSPACE}/src" -maxdepth 1 -type d -name 'deptrum-ros-driver-aurora930*' | head -1)"
+    if [ -n "${EXTRACTED_DIR}" ] && [ "${EXTRACTED_DIR}" != "${WORKSPACE}/src/deptrum-ros-driver-aurora930" ]; then
+      mv "${EXTRACTED_DIR}" "${WORKSPACE}/src/deptrum-ros-driver-aurora930"
+    fi
+    sed -i 's/deptrum-ros-driver\b/deptrum-ros-driver-aurora930/g' "${WORKSPACE}/src/deptrum-ros-driver-aurora930/package.xml"
+  else
+    log "Vendor driver source already extracted -- skipping download."
   fi
-  sed -i 's/deptrum-ros-driver\b/deptrum-ros-driver-aurora930/g' "${WORKSPACE}/src/deptrum-ros-driver-aurora930/package.xml"
+
+  # Clear any stale CMakeCache from a previous failed configure attempt (e.g. missing
+  # -DCMAKE_POLICY_VERSION_MINIMUM the first time) -- CMake can otherwise reuse a cached
+  # configuration that never actually succeeded, silently masking a real re-build.
+  rm -rf "${WORKSPACE}/build" "${WORKSPACE}/install" "${WORKSPACE}/log"
 
   log "Building the vendor driver (STREAM_SDK_TYPE=AURORA930)..."
   cd "${WORKSPACE}"
@@ -140,6 +153,11 @@ if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
   # this override. Confirmed via the exact fix CMake's own error message suggests.
   "${MICROMAMBA}" run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
   cd "${DIMENSIONER_HOME}"
+
+  if [ ! -d "${WORKSPACE}/install/deptrum-ros-driver-aurora930/lib" ] || [ -z "$(ls -A "${WORKSPACE}/install/deptrum-ros-driver-aurora930/lib" 2>/dev/null)" ]; then
+    echo "colcon build did not produce the expected driver library -- check ${WORKSPACE}/log/latest_build/ for the real error." >&2
+    exit 1
+  fi
 
   log "Installing camera udev rules (non-root USB access)..."
   UDEV_SCRIPTS_DIR="$(find "${WORKSPACE}/src/deptrum-ros-driver-aurora930/ext" -maxdepth 1 -type d -name 'deptrum-stream-aurora900-*')/scripts"
