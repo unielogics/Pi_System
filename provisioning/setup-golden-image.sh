@@ -37,9 +37,19 @@ if [ "$(uname -m)" != "aarch64" ]; then
 fi
 
 # ── Step 1: micromamba + ros2 environment ──────────────────────────────────────────────────────
+# Every systemd unit in this repo (dimensioner-api/ros/auto-update.service) and both existing
+# provisioning scripts hardcode the binary at /home/unie/micromamba/bin/micromamba -- but the
+# official installer places it at ~/.local/bin/micromamba and treats ~/micromamba as only the
+# MAMBA_ROOT_PREFIX (environments root), NOT the binary's own location (confirmed live: installing
+# fresh leaves no binary at .../micromamba/bin/micromamba at all). Symlink it into the path every
+# other file already expects, rather than rewriting every unit file/script to match the installer.
 if [ ! -x "${MICROMAMBA_ROOT}/bin/micromamba" ]; then
-  log "Installing micromamba..."
-  "${SHELL}" <(curl -L micro.mamba.pm/install.sh) < /dev/null
+  if [ ! -x "/home/unie/.local/bin/micromamba" ]; then
+    log "Installing micromamba..."
+    "${SHELL}" <(curl -L micro.mamba.pm/install.sh) < /dev/null
+  fi
+  mkdir -p "${MICROMAMBA_ROOT}/bin"
+  ln -sf /home/unie/.local/bin/micromamba "${MICROMAMBA_ROOT}/bin/micromamba"
 fi
 MICROMAMBA="${MICROMAMBA_ROOT}/bin/micromamba"
 
