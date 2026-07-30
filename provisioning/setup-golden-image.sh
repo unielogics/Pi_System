@@ -76,15 +76,33 @@ else
 fi
 cd "${DIMENSIONER_HOME}"
 
-# ── Step 3: self-register early so later steps can authenticate as this device ─────────────────
+# ── Step 3: systemd units + sudoers ─────────────────────────────────────────────────────────────
+# Must happen BEFORE set-warehouse-identity.sh below -- that script's own first action is
+# `systemctl restart dimensioner-api.service`, which fails outright if the unit was never
+# installed. dimensioner-ros.service is safe to enable before the vendor driver is built --
+# Restart=on-failure/RestartSec=5 just retries every 5s until step 5 below makes it succeed
+# (driver_launcher.py deliberately raises a clear "workspace not found" error in the meantime,
+# not a crash).
+log "Installing systemd units and the sudoers rule..."
+sudo install -m 0644 dimensioner-api.service dimensioner-ros.service \
+  dimensioner-network-watchdog.service dimensioner-network-watchdog.timer \
+  dimensioner-auto-update.service dimensioner-auto-update.timer \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable dimensioner-api.service dimensioner-ros.service \
+  dimensioner-network-watchdog.timer dimensioner-auto-update.timer
+sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner
+sudo visudo -c
+
+# ── Step 4: self-register early so later steps can authenticate as this device ─────────────────
 # set-warehouse-identity.sh writes .env, restarts the API, installs the heartbeat timer, and
-# fires one immediate self-registration call -- run it now (not at the very end) so steps 4-5
+# fires one immediate self-registration call -- run it now (not at the very end) so steps 5-6
 # below can use registration.py's own device token instead of needing the raw warehouse secret
 # passed around in shell state for the whole rest of this script.
 log "Registering with the WMS backend..."
 sudo ./provisioning/set-warehouse-identity.sh "${WAREHOUSE_CODE}" "${ZONE_CODE}" "${PROVISIONING_SECRET}"
 
-# ── Step 4: vendor camera driver (licensed -- fetched via the backend's presigned S3 URL) ──────
+# ── Step 5: vendor camera driver (licensed -- fetched via the backend's presigned S3 URL) ──────
 if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
   log "Fetching the vendor camera driver tarball..."
   DOWNLOAD_JSON="$("${MICROMAMBA}" run -n ros2 python registration.py --vendor-driver-download-url)"
@@ -119,18 +137,6 @@ if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
 else
   log "Vendor driver already built -- skipping."
 fi
-
-# ── Step 5: systemd units + sudoers ─────────────────────────────────────────────────────────────
-log "Installing systemd units and the sudoers rule..."
-sudo install -m 0644 dimensioner-api.service dimensioner-ros.service \
-  dimensioner-network-watchdog.service dimensioner-network-watchdog.timer \
-  dimensioner-auto-update.service dimensioner-auto-update.timer \
-  /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable dimensioner-api.service dimensioner-ros.service \
-  dimensioner-network-watchdog.timer dimensioner-auto-update.timer
-sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner
-sudo visudo -c
 
 # ── Step 6: Caddy binary ────────────────────────────────────────────────────────────────────────
 if [ ! -f /home/unie/caddy ]; then
