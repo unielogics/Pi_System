@@ -1,0 +1,5 @@
+# This repo is cloned/pulled onto Linux (Raspberry Pi OS) but often edited from a Windows dev
+# machine (see auto_update.py's git-pull-based self-update). Force LF for every text file
+# regardless of which OS commits it, or Windows' default CRLF normalization would silently break
+# the shebang line on every .sh script the moment someone edits/commits from Windows.
+* text=auto eol=lf

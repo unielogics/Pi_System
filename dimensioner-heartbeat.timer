@@ -1,0 +1,14 @@
+[Unit]
+Description=Periodic dimensioner self-registration heartbeat
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+# Spreads a whole fleet's heartbeats out so a shared event (e.g. a warehouse router reboot,
+# which changes every device's LAN IP at once) doesn't burst every device's Route53 update
+# request in the same second.
+RandomizedDelaySec=60
+Unit=dimensioner-heartbeat.service
+
+[Install]
+WantedBy=timers.target

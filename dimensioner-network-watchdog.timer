@@ -1,0 +1,14 @@
+[Unit]
+Description=Periodic dimensioner network-reachability check
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=2min
+# Tighter than dimensioner-heartbeat.timer's 5-minute cadence -- losing the network is exactly
+# the thing that would also silently break the heartbeat/DNS-sync loop, so this needs to notice
+# and recover faster than that dependent loop's own cadence.
+RandomizedDelaySec=30
+Unit=dimensioner-network-watchdog.service
+
+[Install]
+WantedBy=timers.target

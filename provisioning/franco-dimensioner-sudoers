@@ -1,0 +1,23 @@
+# Grants the `franco` user passwordless sudo for EXACTLY the commands the dimensioner's two
+# watchdogs need to self-heal -- never a blanket NOPASSWD:ALL. Install with:
+#   sudo install -m 0440 provisioning/franco-dimensioner-sudoers /etc/sudoers.d/franco-dimensioner
+# (0440 and the /etc/sudoers.d/ location are required -- sudo silently ignores files with looser
+# permissions or a different owner/group in that directory.)
+#
+# api.py's in-process camera watchdog (_watchdog_loop) restarts the ROS driver when frames go
+# stale; network_watchdog.py reconnects the network interface when the gateway stops responding.
+# Both run as `franco` (see dimensioner-api.service/dimensioner-network-watchdog.service's User=
+# directive) and call `sudo -n ...` (non-interactive -- fails immediately rather than hanging on
+# a password prompt neither watchdog can ever answer).
+#
+# The nmcli rules below MUST list every interface any device in this fleet actually uses -- this
+# fleet has BOTH wired (eth0, confirmed on WH-007's ED1) and WiFi (wlan0) devices, and sudo does
+# not support wildcards in place of the interface name. Add a matching pair of NOPASSWD lines
+# here for any new interface name a future device introduces (network_watchdog.py detects the
+# right interface automatically from the routing table -- this file just needs to permit
+# whichever ones actually exist in the fleet).
+franco ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-ros.service
+franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect eth0
+franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect eth0
+franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect wlan0
+franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect wlan0

@@ -1,0 +1,11 @@
+[Unit]
+Description=Dimensioner network-reachability watchdog (pings gateway, reconnects WiFi on failure)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=franco
+WorkingDirectory=/home/franco/dimensioner
+EnvironmentFile=-/home/franco/dimensioner/.env
+ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 python network_watchdog.py

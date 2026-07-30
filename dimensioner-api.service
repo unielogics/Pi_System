@@ -1,0 +1,17 @@
+[Unit]
+Description=Dimensioner capture API (FastAPI, camera-agnostic core)
+After=network.target dimensioner-ros.service
+Wants=dimensioner-ros.service
+
+[Service]
+Type=simple
+User=franco
+WorkingDirectory=/home/franco/dimensioner
+Environment=MAMBA_ROOT_PREFIX=/home/franco/micromamba
+EnvironmentFile=-/home/franco/dimensioner/.env
+ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 uvicorn api:app --host 127.0.0.1 --port 8090
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

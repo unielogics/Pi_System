@@ -1,0 +1,15 @@
+[Unit]
+Description=Aurora 930 ROS2 driver (deptrum-ros-driver-aurora930)
+After=network.target
+
+[Service]
+Type=simple
+User=franco
+WorkingDirectory=/home/franco/dimensioner
+Environment=MAMBA_ROOT_PREFIX=/home/franco/micromamba
+ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 python3 driver_launcher.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

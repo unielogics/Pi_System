@@ -1,0 +1,13 @@
+# Device-local runtime state -- never shared across devices, never committed. Each physical Pi
+# generates its own device_id (from its own CPU serial), auth token, and calibration data; a
+# cloned/pulled copy of this repo must never inherit another device's identity or calibration.
+data/
+.env
+
+__pycache__/
+*.pyc
+
+# Pre-git ad-hoc backup directories that existed on the one hand-provisioned Pi before this repo
+# existed -- device-local, not source.
+_backup_pre_kiosk_cors/
+_backup_pre_v6v7/

@@ -1,0 +1,18 @@
+{
+	# Route53 DNS-01 challenge -- no port-forwarding or public reachability required, only the
+	# ability to write a TXT record to the uniewms.com zone. Credentials come from the environment
+	# (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), set in caddy.env by provision.sh.
+	acme_dns route53
+}
+
+{{DIMENSIONER_HOSTNAME}} {
+	# key_type rsa4096: Caddy's ACME default is ECDSA, which many locked-firmware/older Android
+	# WebView kiosk browsers (RT10A, etc) silently fail to complete a TLS handshake against --
+	# same root cause already fixed for the main WMS box's certbot-issued certs (see
+	# UnieBackend/scripts/provision-kiosk-subdomain.sh). Forces Caddy to issue/renew this site's
+	# cert as RSA instead.
+	tls {
+		key_type rsa4096
+	}
+	reverse_proxy 127.0.0.1:8090
+}

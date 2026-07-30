@@ -1,0 +1,10 @@
+# Pip-installable dependencies for the `ros2` micromamba environment (Section 1, step 3 of
+# dimensioner/README.md). Everything here is imported directly by api.py/registration.py/
+# device_config.py/measure.py/etc -- confirmed by grepping every top-level import in this
+# directory. Does NOT include rclpy/cv_bridge/sensor_msgs/tf2_msgs -- those come from the ROS2
+# distro itself (RoboStack's conda channel), not pip; see README.md Section 1 step 3 for the
+# micromamba/RoboStack setup that provides them.
+fastapi
+uvicorn
+numpy
+pillow
