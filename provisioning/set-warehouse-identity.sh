@@ -48,6 +48,15 @@ systemctl enable --now dimensioner-heartbeat.timer
 
 echo "Registering with the WMS backend now..."
 cd "${DIMENSIONER_HOME}"
+# registration.py reads DIMENSIONER_WAREHOUSE_CODE/ZONE_CODE/PROVISIONING_SECRET from
+# os.environ -- systemd's EnvironmentFile= directive loads .env for the actual services, but
+# this one-off invocation runs outside systemd, so .env must be sourced explicitly here or the
+# vars are simply unset (confirmed live: registration.py raised "not set" on a fresh device with
+# no prior shell session already exporting them).
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
 /home/unie/micromamba/bin/micromamba run -n ros2 python registration.py
 
 echo "Done. Heartbeat timer installed (systemctl status dimensioner-heartbeat.timer)."

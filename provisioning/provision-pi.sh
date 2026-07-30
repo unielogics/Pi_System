@@ -25,8 +25,13 @@ if [ ! -f "${DIMENSIONER_HOME}/.env" ]; then
   echo "No .env found -- run set-warehouse-identity.sh first (needs warehouse/zone identity and this device's own token)." >&2
   exit 1
 fi
+# set -a/+a so the sourced vars are actually exported to child processes (registration.py below
+# reads them via os.environ) -- a plain `source` alone leaves them as shell-local variables only,
+# confirmed live: registration.py --route53-credentials silently saw them as unset without this.
+set -a
 # shellcheck disable=SC1091
 source "${DIMENSIONER_HOME}/.env"
+set +a
 if [ -z "${DIMENSIONER_WAREHOUSE_CODE:-}" ] || [ -z "${DIMENSIONER_ZONE_CODE:-}" ]; then
   echo "DIMENSIONER_WAREHOUSE_CODE/DIMENSIONER_ZONE_CODE not set in .env -- run set-warehouse-identity.sh first." >&2
   exit 1
