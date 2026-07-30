@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -57,6 +58,21 @@ def save_registration_state(state: RegistrationState) -> None:
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     with open(STATE_PATH, "w") as f:
         json.dump(asdict(state), f)
+
+
+def _git_sha() -> Optional[str]:
+    """Short commit SHA of whatever's actually checked out, read live rather than baked into a
+    version file -- always current, and a device that isn't a git checkout at all (never
+    bootstrapped onto Pi_System) simply reports none instead of erroring."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(__file__),
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def _lan_ip() -> str:
@@ -107,6 +123,9 @@ def register_or_heartbeat(force_rotate_token: bool = False) -> dict:
         body["cameraModel"] = CAMERA_MODEL
     if DEVICE_NAME:
         body["name"] = DEVICE_NAME
+    git_sha = _git_sha()
+    if git_sha:
+        body["gitSha"] = git_sha
 
     request = urllib.request.Request(
         f"{WMS_BACKEND_URL}/dimensioners/register",
