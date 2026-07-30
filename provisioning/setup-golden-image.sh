@@ -105,6 +105,13 @@ sudo ./provisioning/set-warehouse-identity.sh "${WAREHOUSE_CODE}" "${ZONE_CODE}"
 # ── Step 5: vendor camera driver (licensed -- fetched via the backend's presigned S3 URL) ──────
 if [ ! -f "${WORKSPACE}/install/setup.bash" ]; then
   log "Fetching the vendor camera driver tarball..."
+  # registration.py reads DIMENSIONER_WAREHOUSE_CODE/ZONE_CODE from os.environ -- a plain
+  # `source .env` only sets shell-local variables, it does NOT export them to this child process
+  # (same gap already fixed in set-warehouse-identity.sh/provision-pi.sh).
+  set -a
+  # shellcheck disable=SC1091
+  source "${DIMENSIONER_HOME}/.env"
+  set +a
   DOWNLOAD_JSON="$("${MICROMAMBA}" run -n ros2 python registration.py --vendor-driver-download-url)"
   if echo "${DOWNLOAD_JSON}" | grep -q '"error"'; then
     echo "Failed to fetch the vendor driver download URL: ${DOWNLOAD_JSON}" >&2
