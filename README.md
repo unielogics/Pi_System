@@ -175,3 +175,5 @@ physical unit:
 Everything else (`device_id`, the auth token, the DNS record) is generated automatically — the
 `device_id` from the Pi's own CPU serial number, the auth token minted by the backend on first
 registration, the DNS record upserted by the backend the moment that registration call lands.
+
+<!-- auto_update.py verified live on WH-007 ED1, 2026-07-29 -->
