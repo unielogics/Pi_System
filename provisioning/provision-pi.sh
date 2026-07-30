@@ -17,7 +17,7 @@
 # Usage (on the Pi): sudo ./provision-pi.sh
 set -euo pipefail
 
-DIMENSIONER_HOME="/home/franco/dimensioner"
+DIMENSIONER_HOME="/home/unie/dimensioner"
 CADDY_BIN="/usr/local/bin/caddy"
 CADDY_ETC="/etc/caddy"
 
@@ -36,19 +36,19 @@ DNS_DOMAIN="${DIMENSIONER_DNS_DOMAIN:-uniewms.com}"
 sanitize() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'; }
 FQDN="dimensioner-$(sanitize "${DIMENSIONER_WAREHOUSE_CODE}")-$(sanitize "${DIMENSIONER_ZONE_CODE}").${DNS_DOMAIN}"
 
-if [ ! -x "${DIMENSIONER_HOME}/caddy" ] && [ ! -f "/home/franco/caddy" ]; then
-  echo "Expected the custom Caddy binary (with the route53 DNS plugin) at /home/franco/caddy." >&2
+if [ ! -x "${DIMENSIONER_HOME}/caddy" ] && [ ! -f "/home/unie/caddy" ]; then
+  echo "Expected the custom Caddy binary (with the route53 DNS plugin) at /home/unie/caddy." >&2
   echo "Download it from https://caddyserver.com/api/download?os=linux&arch=arm64&p=github.com%2Fcaddy-dns%2Froute53" >&2
   exit 1
 fi
 
-install -m 0755 /home/franco/caddy "${CADDY_BIN}"
+install -m 0755 /home/unie/caddy "${CADDY_BIN}"
 mkdir -p "${CADDY_ETC}"
 
 sed "s/{{DIMENSIONER_HOSTNAME}}/${FQDN}/" "$(dirname "$0")/Caddyfile.template" > "${CADDY_ETC}/Caddyfile"
 
 echo "Fetching short-lived Route53 credentials for ${FQDN}..."
-CREDS_JSON="$(cd "${DIMENSIONER_HOME}" && /home/franco/micromamba/bin/micromamba run -n ros2 python registration.py --route53-credentials)"
+CREDS_JSON="$(cd "${DIMENSIONER_HOME}" && /home/unie/micromamba/bin/micromamba run -n ros2 python registration.py --route53-credentials)"
 if echo "${CREDS_JSON}" | grep -q '"error"'; then
   echo "Failed to fetch Route53 credentials: ${CREDS_JSON}" >&2
   exit 1

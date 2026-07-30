@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=franco
-WorkingDirectory=/home/franco/dimensioner
-EnvironmentFile=-/home/franco/dimensioner/.env
-ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 python network_watchdog.py
+User=unie
+WorkingDirectory=/home/unie/dimensioner
+EnvironmentFile=-/home/unie/dimensioner/.env
+ExecStart=/home/unie/micromamba/bin/micromamba run -n ros2 python network_watchdog.py

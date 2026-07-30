@@ -20,27 +20,62 @@ already-built image.
    Imager](https://www.raspberrypi.com/software/), using its **OS customization** screen (the gear
    icon shown before writing) to set:
    - Hostname: anything generic (e.g. `dimensioner-golden`) — never read by the app.
-   - Username/password: use `franco`. Every systemd unit and script in this directory hardcodes
-     `/home/franco/...` paths and `User=franco` — deviating here means hand-editing every unit
+   - Username/password: use `unie`. Every systemd unit and script in this directory hardcodes
+     `/home/unie/...` paths and `User=unie` — deviating here means hand-editing every unit
      file per device, which defeats the point of a reusable image.
    - Enable SSH.
    - **Do not** set WiFi here. Each physical site's WiFi is set at *flash* time per device
      (Section 2, step 4), not baked into the golden image — the golden image should work at any
      site.
 2. Boot it once over Ethernet (not WiFi), so setup isn't tied to any one site's network.
-3. Install micromamba, then create a `ros2` conda/mamba environment via
-   [RoboStack](https://robostack.github.io/) (provides `rclpy`, `cv_bridge`, `sensor_msgs`,
-   `tf2_msgs` — these are NOT pip packages). Inside that environment, `pip install -r
-   requirements.txt` (this directory's file) for the remaining Python dependencies
-   (`fastapi`, `uvicorn`, `numpy`, `pillow`).
-4. Build the vendor's `deptrum-ros-driver-aurora930` ROS2 package into `~/dimensioner_ws`,
-   following Deptrum's own SDK build instructions for the Aurora 930. **This step is currently
-   vendor-specific tribal knowledge with no written instructions anywhere** — whoever builds the
-   next golden image should capture the exact commands they run here and fold them into this
-   section, closing that gap permanently.
-5. Clone this repo to `/home/franco/dimensioner` (public repo, no credentials needed):
+3. Install [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)
+   (installs to `~/micromamba`), then create the `ros2` environment from
+   [RoboStack](https://robostack.github.io/)'s `robostack-humble` channel (provides `rclpy`,
+   `cv_bridge`, `sensor_msgs`, `tf2_msgs`, `image_transport` — these are NOT pip packages):
    ```bash
-   git clone https://github.com/unielogics/Pi_System.git /home/franco/dimensioner
+   micromamba create -n ros2 -c robostack-humble -c conda-forge \
+     python=3.12 \
+     ros-humble-ros-base ros-humble-cv-bridge ros-humble-image-transport ros-humble-angles \
+     colcon-common-extensions \
+     fastapi uvicorn python-multipart pillow
+   ```
+   `fastapi`/`uvicorn`/`pillow` are pulled from conda-forge here rather than via a separate `pip
+   install -r requirements.txt` step — confirmed both approaches produce a working env, but doing
+   it in one `micromamba create` avoids a second dependency-resolution pass. `numpy` comes in
+   transitively via the ROS packages; `requirements.txt` in this directory documents the pip-only
+   equivalent for reference. **Known gotcha**: if you ever add a bare `boost=X` or an unrelated
+   pin to this environment, `ros-humble-cv-bridge` and `boost`/`python=3.12` can become mutually
+   unsatisfiable (confirmed hit on the original golden Pi — `micromamba` reports a wall of
+   `Could not solve for environment specs` boost/python version cross-talk). Fix: drop the extra
+   pin and let `robostack-humble`/`conda-forge` resolve boost's version themselves; don't pin
+   `boost` directly.
+4. Build the vendor's `deptrum-ros-driver-aurora930` ROS2 package into `~/dimensioner_ws`. The
+   vendor SDK (`deptrum-stream-aurora900-linux-aarch64`, a proprietary precompiled `.so` + headers,
+   ~40MB) and the ROS2 driver source are Deptrum-licensed — obtained directly from Deptrum
+   (support contact/portal, not a public URL), never committed to this public repo. Once you have
+   both from Deptrum:
+   ```bash
+   mkdir -p ~/dimensioner_ws/src
+   cd ~/dimensioner_ws/src
+   # Extract/clone Deptrum's deptrum-ros-driver package here, then:
+   sed -i 's/deptrum-ros-driver\b/deptrum-ros-driver-aurora930/g' deptrum-ros-driver-aurora930/package.xml
+   # Place the vendor SDK (deptrum-stream-aurora900-linux-aarch64-vX.X.X-...) under
+   # deptrum-ros-driver-aurora930/ext/ -- the package's CMakeLists.txt expects it there.
+   cd ~/dimensioner_ws
+   micromamba run -n ros2 colcon build --cmake-args -DSTREAM_SDK_TYPE=AURORA930
+   ```
+   `STREAM_SDK_TYPE=AURORA930` is the load-bearing flag — the same source tree also builds
+   STELLAR400/STELLAR420/NEBULA variants depending on this value; get it wrong and the driver
+   builds against the wrong camera's SDK. Also run the vendor SDK's udev setup once per golden
+   image (grants non-root USB access to the camera — `idVendor=3251`):
+   ```bash
+   cd ~/dimensioner_ws/src/deptrum-ros-driver-aurora930/ext/deptrum-stream-aurora900-*/scripts
+   sudo cp 99-deptrum-libusb.rules /etc/udev/rules.d/
+   sudo udevadm control --reload-rules && sudo udevadm trigger
+   ```
+5. Clone this repo to `/home/unie/dimensioner` (public repo, no credentials needed):
+   ```bash
+   git clone https://github.com/unielogics/Pi_System.git /home/unie/dimensioner
    ```
 6. Install the systemd unit files and enable the always-on services, including the network
    watchdog and the auto-updater (neither needs warehouse identity, unlike the heartbeat timer —
@@ -53,10 +88,10 @@ already-built image.
 6a. Install the sudoers rule both watchdogs depend on (see "Self-healing," below, for what each
     one restarts/reconnects) — without this, both watchdogs' recovery actions silently fail:
    ```bash
-   sudo install -m 0440 provisioning/franco-dimensioner-sudoers /etc/sudoers.d/franco-dimensioner
+   sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner
    ```
 7. Download the custom Caddy binary (with the Route53 DNS-01 plugin) and place it at
-   `/home/franco/caddy`:
+   `/home/unie/caddy`:
    ```
    https://caddyserver.com/api/download?os=linux&arch=arm64&p=github.com%2Fcaddy-dns%2Froute53
    ```
@@ -105,7 +140,7 @@ Repeat this for every physical device, at every warehouse.
    DHCP client list).
 6. SSH in and run the command copied from step 2 (paste it as-is):
    ```bash
-   cd /home/franco/dimensioner/provisioning
+   cd /home/unie/dimensioner/provisioning
    sudo ./set-warehouse-identity.sh <warehouse-code-lowercase> <zone-code-lowercase> <secret-from-dashboard>
    ```
    This writes `.env`, restarts the API, installs and enables the heartbeat timer, and fires one
@@ -161,7 +196,7 @@ without human intervention:
   gateway/internet). After 2 consecutive failed checks, forces a reconnect on whichever interface
   (wired or WiFi) carries the default route, via `nmcli`.
 
-Both call `sudo -n ...` as `franco`, which requires the `franco-dimensioner-sudoers` rule
+Both call `sudo -n ...` as `unie`, which requires the `unie-dimensioner-sudoers` rule
 installed in Section 1, step 6a — a fresh golden image built without that step will have both
 watchdogs detect the problem but silently fail to act on it (check `journalctl` for
 `sudo -n: a password is required` if a device's cameras/network never seem to self-recover).

@@ -20,7 +20,7 @@ WAREHOUSE_CODE="${1:?Usage: set-warehouse-identity.sh <warehouse-code> <zone-cod
 ZONE_CODE="${2:?Usage: set-warehouse-identity.sh <warehouse-code> <zone-code> <provisioning-secret>}"
 PROVISIONING_SECRET="${3:?Usage: set-warehouse-identity.sh <warehouse-code> <zone-code> <provisioning-secret>}"
 
-DIMENSIONER_HOME="/home/franco/dimensioner"
+DIMENSIONER_HOME="/home/unie/dimensioner"
 ENV_FILE="${DIMENSIONER_HOME}/.env"
 
 touch "${ENV_FILE}"
@@ -48,7 +48,7 @@ systemctl enable --now dimensioner-heartbeat.timer
 
 echo "Registering with the WMS backend now..."
 cd "${DIMENSIONER_HOME}"
-/home/franco/micromamba/bin/micromamba run -n ros2 python registration.py
+/home/unie/micromamba/bin/micromamba run -n ros2 python registration.py
 
 echo "Done. Heartbeat timer installed (systemctl status dimensioner-heartbeat.timer)."
 echo "Check the WMS dashboard's Sensors and Cameras page -- this device should now appear tagged \"Self-registered\"."

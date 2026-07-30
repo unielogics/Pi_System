@@ -4,10 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=franco
-WorkingDirectory=/home/franco/dimensioner
-Environment=MAMBA_ROOT_PREFIX=/home/franco/micromamba
-ExecStart=/home/franco/micromamba/bin/micromamba run -n ros2 python3 driver_launcher.py
+User=unie
+WorkingDirectory=/home/unie/dimensioner
+Environment=MAMBA_ROOT_PREFIX=/home/unie/micromamba
+ExecStart=/home/unie/micromamba/bin/micromamba run -n ros2 python3 driver_launcher.py
 Restart=on-failure
 RestartSec=5
 

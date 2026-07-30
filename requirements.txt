@@ -6,5 +6,6 @@
 # micromamba/RoboStack setup that provides them.
 fastapi
 uvicorn
+python-multipart
 numpy
 pillow

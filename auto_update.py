@@ -70,7 +70,7 @@ def main() -> int:
     if any(f == REQUIREMENTS_FILE for f in changed_files):
         print("[auto_update] requirements.txt changed -- reinstalling dependencies.")
         pip_install = _run(
-            ["/home/franco/micromamba/bin/micromamba", "run", "-n", "ros2",
+            ["/home/unie/micromamba/bin/micromamba", "run", "-n", "ros2",
              "pip", "install", "-r", REQUIREMENTS_FILE],
             timeout=180,
         )

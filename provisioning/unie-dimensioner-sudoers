@@ -1,12 +1,12 @@
-# Grants the `franco` user passwordless sudo for EXACTLY the commands the dimensioner's two
+# Grants the `unie` user passwordless sudo for EXACTLY the commands the dimensioner's two
 # watchdogs need to self-heal -- never a blanket NOPASSWD:ALL. Install with:
-#   sudo install -m 0440 provisioning/franco-dimensioner-sudoers /etc/sudoers.d/franco-dimensioner
+#   sudo install -m 0440 provisioning/unie-dimensioner-sudoers /etc/sudoers.d/unie-dimensioner
 # (0440 and the /etc/sudoers.d/ location are required -- sudo silently ignores files with looser
 # permissions or a different owner/group in that directory.)
 #
 # api.py's in-process camera watchdog (_watchdog_loop) restarts the ROS driver when frames go
 # stale; network_watchdog.py reconnects the network interface when the gateway stops responding.
-# Both run as `franco` (see dimensioner-api.service/dimensioner-network-watchdog.service's User=
+# Both run as `unie` (see dimensioner-api.service/dimensioner-network-watchdog.service's User=
 # directive) and call `sudo -n ...` (non-interactive -- fails immediately rather than hanging on
 # a password prompt neither watchdog can ever answer).
 #
@@ -16,28 +16,28 @@
 # here for any new interface name a future device introduces (network_watchdog.py detects the
 # right interface automatically from the routing table -- this file just needs to permit
 # whichever ones actually exist in the fleet).
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-ros.service
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-api.service
-franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect eth0
-franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect eth0
-franco ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect wlan0
-franco ALL=(root) NOPASSWD: /usr/bin/nmcli device connect wlan0
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-ros.service
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl restart dimensioner-api.service
+unie ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect eth0
+unie ALL=(root) NOPASSWD: /usr/bin/nmcli device connect eth0
+unie ALL=(root) NOPASSWD: /usr/bin/nmcli device disconnect wlan0
+unie ALL=(root) NOPASSWD: /usr/bin/nmcli device connect wlan0
 
-# auto_update.py (dimensioner-auto-update.timer, every 30 min) needs to reapply a changed unit
+# auto_update.py (dimensioner-auto-update.timer, once nightly) needs to reapply a changed unit
 # file's installation steps the same way a human would per README.md -- reload systemd's view of
 # unit files, re-enable one that changed, and copy the updated file from the repo into
 # /etc/systemd/system/. The `cp` glob is a sudoers pathname pattern (fnmatch), not a shell glob --
-# it only matches files directly inside /home/franco/dimensioner/, so a compromised git history
+# it only matches files directly inside /home/unie/dimensioner/, so a compromised git history
 # still can't use this rule to overwrite an arbitrary system path.
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.service
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.timer
-franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.service /etc/systemd/system/
-franco ALL=(root) NOPASSWD: /usr/bin/cp /home/franco/dimensioner/*.timer /etc/systemd/system/
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.service
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl enable dimensioner-*.timer
+unie ALL=(root) NOPASSWD: /usr/bin/cp /home/unie/dimensioner/*.service /etc/systemd/system/
+unie ALL=(root) NOPASSWD: /usr/bin/cp /home/unie/dimensioner/*.timer /etc/systemd/system/
 
 # The on-demand "Update Now" dashboard button (POST /update-now in api.py) needs to start the
 # auto-update oneshot unit outside its normal overnight schedule, without auto_update.py running
 # in-process (which would restart THIS process, api.py, mid-request -- see /update-now's
 # docstring). `start` (not `restart`) is correct: the unit is Type=oneshot and normally inactive
 # between runs, so `start` is what actually invokes it on demand.
-franco ALL=(root) NOPASSWD: /usr/bin/systemctl start dimensioner-auto-update.service
+unie ALL=(root) NOPASSWD: /usr/bin/systemctl start dimensioner-auto-update.service
