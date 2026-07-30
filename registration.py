@@ -148,9 +148,47 @@ def register_or_heartbeat(force_rotate_token: bool = False) -> dict:
     return result
 
 
+def fetch_route53_credentials() -> dict:
+    """Calls POST /dimensioners/route53-credentials -- short-lived (1hr) AWS credentials this
+    device's Caddy instance uses for its own Route53 DNS-01 ACME challenge, replacing the old
+    flow where a human manually copied the backend's own long-lived Route53 IAM key onto the
+    Pi (see provisioning/provision-pi.sh). Requires the device to have already completed
+    self-registration (state.auth_token set) -- run set-warehouse-identity.sh first, same
+    precondition register_or_heartbeat() has for every call after the first."""
+    if not WAREHOUSE_CODE or not ZONE_CODE:
+        raise RuntimeError(
+            "DIMENSIONER_WAREHOUSE_CODE/DIMENSIONER_ZONE_CODE not set -- run "
+            "provisioning/set-warehouse-identity.sh first."
+        )
+
+    state = load_registration_state()
+    credential = state.auth_token or PROVISIONING_SECRET
+    if not credential:
+        raise RuntimeError(
+            "No device token yet -- run set-warehouse-identity.sh (which self-registers) "
+            "before requesting Route53 credentials."
+        )
+
+    body = {"warehouseCode": WAREHOUSE_CODE, "zoneCode": ZONE_CODE, "deviceId": load_device_config().device_id}
+    request = urllib.request.Request(
+        f"{WMS_BACKEND_URL}/dimensioners/route53-credentials",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {credential}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SEC) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 if __name__ == "__main__":
     import sys
 
-    force_rotate = "--force-rotate-token" in sys.argv
-    outcome = register_or_heartbeat(force_rotate_token=force_rotate)
-    print(json.dumps(outcome))
+    if "--route53-credentials" in sys.argv:
+        print(json.dumps(fetch_route53_credentials()))
+    else:
+        force_rotate = "--force-rotate-token" in sys.argv
+        outcome = register_or_heartbeat(force_rotate_token=force_rotate)
+        print(json.dumps(outcome))

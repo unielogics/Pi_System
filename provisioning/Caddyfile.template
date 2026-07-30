@@ -1,7 +1,8 @@
 {
 	# Route53 DNS-01 challenge -- no port-forwarding or public reachability required, only the
 	# ability to write a TXT record to the uniewms.com zone. Credentials come from the environment
-	# (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), set in caddy.env by provision.sh.
+	# (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN -- short-lived, fetched from
+	# the WMS backend by provision-pi.sh, not a static key), set in caddy.env.
 	acme_dns route53
 }
 

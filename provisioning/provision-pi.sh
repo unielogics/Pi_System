@@ -1,29 +1,40 @@
 #!/usr/bin/env bash
 # Runs ON the dimensioner Pi. Installs Caddy as a systemd service, wires up Route53 DNS-01 with
-# the shared IAM credentials, and reverse-proxies HTTPS -> the local capture API on :8090.
+# short-lived credentials fetched from the WMS backend, and reverse-proxies HTTPS -> the local
+# capture API on :8090.
 #
-# DNS is now automatic: the backend upserts this device's A record itself on self-registration
-# (see set-warehouse-identity.sh / registration.py), so there's no DNS precondition here anymore.
-# Caddy's DNS-01 cert challenge writes its own TXT record independently of that A record, so run
-# order between this script and set-warehouse-identity.sh doesn't matter.
+# No AWS credentials file to prepare anymore -- the backend mints short-lived (1hr), narrowly
+# scoped Route53 credentials for this device's own FQDN (see registration.py's
+# fetch_route53_credentials() / dimensioner-dns.service.ts's mintTemporaryRoute53Credentials) and
+# hands them over the same authenticated channel used for self-registration/heartbeat. Requires
+# set-warehouse-identity.sh to have already run (so .env has warehouse/zone identity + this
+# device's own token) -- run order relative to that script matters now, unlike the old flow.
 #
-# Usage (on the Pi): sudo ./provision-pi.sh <fqdn> <env-file-with-aws-creds>
-#   e.g. sudo ./provision-pi.sh dimensioner-wh007-ed1.uniewms.com /home/franco/caddy.env.tmp
-# The env file must define AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (one per line). Passing
-# credentials via a file rather than argv avoids leaking the secret into shell history / `ps`.
+# DNS A-record creation is separately automatic: the backend upserts it on self-registration (see
+# set-warehouse-identity.sh / registration.py). Caddy's DNS-01 cert challenge writes its own TXT
+# record independently of that A record.
+#
+# Usage (on the Pi): sudo ./provision-pi.sh
 set -euo pipefail
 
-FQDN="${1:?Usage: provision-pi.sh <fqdn> <env-file-with-aws-creds>}"
-CREDS_FILE="${2:?Usage: provision-pi.sh <fqdn> <env-file-with-aws-creds>}"
+DIMENSIONER_HOME="/home/franco/dimensioner"
+CADDY_BIN="/usr/local/bin/caddy"
+CADDY_ETC="/etc/caddy"
 
-if [ ! -f "${CREDS_FILE}" ]; then
-  echo "Credentials file not found: ${CREDS_FILE}" >&2
+if [ ! -f "${DIMENSIONER_HOME}/.env" ]; then
+  echo "No .env found -- run set-warehouse-identity.sh first (needs warehouse/zone identity and this device's own token)." >&2
+  exit 1
+fi
+# shellcheck disable=SC1091
+source "${DIMENSIONER_HOME}/.env"
+if [ -z "${DIMENSIONER_WAREHOUSE_CODE:-}" ] || [ -z "${DIMENSIONER_ZONE_CODE:-}" ]; then
+  echo "DIMENSIONER_WAREHOUSE_CODE/DIMENSIONER_ZONE_CODE not set in .env -- run set-warehouse-identity.sh first." >&2
   exit 1
 fi
 
-CADDY_BIN="/usr/local/bin/caddy"
-CADDY_ETC="/etc/caddy"
-DIMENSIONER_HOME="/home/franco/dimensioner"
+DNS_DOMAIN="${DIMENSIONER_DNS_DOMAIN:-uniewms.com}"
+sanitize() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'; }
+FQDN="dimensioner-$(sanitize "${DIMENSIONER_WAREHOUSE_CODE}")-$(sanitize "${DIMENSIONER_ZONE_CODE}").${DNS_DOMAIN}"
 
 if [ ! -x "${DIMENSIONER_HOME}/caddy" ] && [ ! -f "/home/franco/caddy" ]; then
   echo "Expected the custom Caddy binary (with the route53 DNS plugin) at /home/franco/caddy." >&2
@@ -36,8 +47,30 @@ mkdir -p "${CADDY_ETC}"
 
 sed "s/{{DIMENSIONER_HOSTNAME}}/${FQDN}/" "$(dirname "$0")/Caddyfile.template" > "${CADDY_ETC}/Caddyfile"
 
-install -m 0600 "${CREDS_FILE}" "${CADDY_ETC}/caddy.env"
-rm -f "${CREDS_FILE}"
+echo "Fetching short-lived Route53 credentials for ${FQDN}..."
+CREDS_JSON="$(cd "${DIMENSIONER_HOME}" && /home/franco/micromamba/bin/micromamba run -n ros2 python registration.py --route53-credentials)"
+if echo "${CREDS_JSON}" | grep -q '"error"'; then
+  echo "Failed to fetch Route53 credentials: ${CREDS_JSON}" >&2
+  exit 1
+fi
+
+ACCESS_KEY_ID="$(echo "${CREDS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessKeyId"])')"
+SECRET_ACCESS_KEY="$(echo "${CREDS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["secretAccessKey"])')"
+SESSION_TOKEN="$(echo "${CREDS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sessionToken"])')"
+EXPIRATION="$(echo "${CREDS_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["expiration"])')"
+
+{
+  echo "AWS_ACCESS_KEY_ID=${ACCESS_KEY_ID}"
+  echo "AWS_SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}"
+  echo "AWS_SESSION_TOKEN=${SESSION_TOKEN}"
+} > "${CADDY_ETC}/caddy.env"
+chmod 0600 "${CADDY_ETC}/caddy.env"
+chown root:root "${CADDY_ETC}/caddy.env"
+
+echo "Credentials expire at ${EXPIRATION} -- only needed for the initial DNS-01 challenge and"
+echo "future cert renewals (~every 60-90 days), not continuously. If a renewal fails after this"
+echo "token has expired, just re-run this script to refresh caddy.env (see dimensioner/README.md's"
+echo "Auto-update section for the known gap here -- no automatic refresh exists yet)."
 
 cat > /etc/systemd/system/caddy.service <<'EOF'
 [Unit]

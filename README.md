@@ -85,13 +85,16 @@ Repeat this for every physical device, at every warehouse.
 
 1. Confirm the target Warehouse and Zone already exist (Warehouses → Setup). Self-registration
    404s until both do.
-2. Go to Warehouse Settings → **Sensors and Cameras**. If the "Provisioning secret" bar near the
-   top reads "Not generated yet," click **Generate** — once per warehouse, not per device; every
-   device at that warehouse reuses the same value. Click **Show**, then **Copy**.
-3. **Do not** use the "Add device" / "+ Add New Sensor or Camera" modal for a self-registering
-   Pi — that form is the legacy manual endpoint-URL/token-entry path this process replaces
-   entirely. A self-registered device appears in the table automatically; nothing needs to be
-   pre-created there.
+2. Go to Warehouse Settings → **Sensors and Cameras** → **+ Add New Sensor or Camera** →
+   **Self-registering Pi (recommended)**. Pick the target zone; if the provisioning secret reads
+   "Not generated yet," click **Generate** — once per warehouse, not per device; every device at
+   that warehouse reuses the same value. The exact `set-warehouse-identity.sh` command (with the
+   warehouse/zone codes and secret already filled in) is shown right below it — copy it, you'll
+   paste it into the Pi's SSH session in step 6.
+3. The plain "Advanced: enter a network scanner's endpoint URL and token manually" link at the
+   bottom of that same chooser is the legacy manual endpoint-URL/token-entry path — don't use it
+   for a self-registering Pi. A self-registered device appears in the table automatically; nothing
+   needs to be pre-created there.
 
 **On the physical Pi:**
 
@@ -100,7 +103,7 @@ Repeat this for every physical device, at every warehouse.
    varies per device and should never be baked into the golden image.
 5. Boot it at the target site; confirm it joined the site's WiFi (`ip addr`, or check the router's
    DHCP client list).
-6. SSH in and run, in order:
+6. SSH in and run the command copied from step 2 (paste it as-is):
    ```bash
    cd /home/franco/dimensioner/provisioning
    sudo ./set-warehouse-identity.sh <warehouse-code-lowercase> <zone-code-lowercase> <secret-from-dashboard>
@@ -109,17 +112,16 @@ Repeat this for every physical device, at every warehouse.
    immediate self-registration call.
 7. Check the dashboard's Sensors and Cameras device table — the new device should appear, tagged
    "Self-registered," within a few seconds.
-8. Get a temporary credentials file onto the Pi with the shared Route53 IAM user's keys:
-   ```
-   AWS_ACCESS_KEY_ID=...
-   AWS_SECRET_ACCESS_KEY=...
-   ```
-   then run:
+8. Run, with no arguments:
    ```bash
-   sudo ./provision-pi.sh dimensioner-<warehouse-code>-<zone-code>.uniewms.com /path/to/that/creds/file
+   sudo ./provision-pi.sh
    ```
-   (`provision-pi.sh` deletes the creds file itself after use.) This installs and starts Caddy
-   with HTTPS via Route53 DNS-01, at the exact hostname the backend already created in step 6.
+   No AWS credentials file to prepare — this device fetches its own short-lived (1hr), narrowly
+   scoped Route53 credentials from the backend (see "Auto-update" below for the one known gap:
+   there's no automatic refresh yet, so a cert renewal after that hour expires needs a re-run of
+   this script). This installs and starts Caddy with HTTPS via Route53 DNS-01, at the exact
+   hostname the backend already created in step 6 (derived from `.env`, not passed as an
+   argument).
 9. Wait up to ~60s for cert issuance (`journalctl -u caddy -f` to watch), then verify — **from a
    device physically on this warehouse's network** — by opening:
    ```
@@ -189,6 +191,26 @@ current fleet size, revisit if the fleet grows.
 Each device reports the short commit SHA it's running on with every self-registration/heartbeat
 call (`registration.py`'s `_git_sha()`) — visible read-only in the dashboard's Sensors and Cameras
 device table, next to the Self-registered/Manual badge.
+
+## Route53 credentials
+
+`provision-pi.sh` no longer requires a human to manually copy an AWS Route53 IAM secret key onto
+the device. Instead, `registration.py`'s `fetch_route53_credentials()` requests short-lived (1hr),
+narrowly-scoped AWS STS credentials from the backend (`POST /dimensioners/route53-credentials`,
+gated by the same self-registration auth as `/dimensioners/register`) and writes them into
+`/etc/caddy/caddy.env` — Caddy's `acme_dns route53` plugin picks up `AWS_SESSION_TOKEN` alongside
+the access/secret key automatically, no `Caddyfile.template` change needed.
+
+**Known gap**: those credentials expire after 1 hour, but Caddy only calls Route53 again at each
+cert renewal (~every 60-90 days) — there's no automatic refresh loop today. If a renewal fails
+because the token's long expired, `journalctl -u caddy` will show a clear ACME/DNS-01 failure; the
+fix is just re-running `sudo ./provision-pi.sh` to refresh `caddy.env`. A small
+`caddy-credential-refresh.timer` that does this automatically every ~45 minutes is a reasonable
+follow-up, not built yet.
+
+Requires `ROUTE53_DIMENSIONER_ROLE_ARN` to be set on the backend (see
+`UnieBackend/docs/ENV_VARIABLES_ROUTE53.md`) — a one-time AWS IAM role setup, not something either
+repo's code provisions.
 
 ## What's fixed vs. what varies per device
 
